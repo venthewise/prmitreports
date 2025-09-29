@@ -45,6 +45,17 @@
     button:hover { background-color: #5237d8; }
     p { color: #555; }
     #status { margin-top: 20px; font-size: 14px; color: #555; }
+    #downloadBtn {
+      display: none;
+      margin-top: 15px;
+      padding: 10px 20px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #downloadBtn:hover { background-color: #218838; }
     #error { color: red; margin-bottom: 10px; font-size: 14px; }
   </style>
 </head>
@@ -63,6 +74,7 @@
     </form>
 
     <div id="status"></div>
+    <button id="downloadBtn">Download CSV</button>
   </div>
 
   <script>
@@ -70,17 +82,18 @@
     const textarea = document.getElementById('permitNumbersInput');
     const statusEl = document.getElementById('status');
     const errorEl = document.getElementById('error');
+    const downloadBtn = document.getElementById('downloadBtn');
 
-    // Internal serverless function endpoint
-    const apiURL = '/api/generate-report';
+    // Call the Vercel serverless function that hides the actual webhook
+    const apiEndpoint = '/api/generate-report';
 
-    // Regex for a valid permit number
     const permitPattern = /^BCP\d{4}-\d{6}$/;
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       errorEl.textContent = '';
       statusEl.textContent = '';
+      downloadBtn.style.display = 'none';
 
       const rawInput = textarea.value.trim();
       if (!rawInput) {
@@ -90,6 +103,7 @@
 
       const permits = rawInput.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
       const invalids = permits.filter(p => !permitPattern.test(p));
+
       if (invalids.length > 0) {
         errorEl.textContent = `Invalid permit number(s): ${invalids.join(', ')}`;
         return;
@@ -98,20 +112,35 @@
       statusEl.textContent = 'Submitting permits…';
 
       try {
-        const url = `${apiURL}?permitNumbers=${encodeURIComponent(permits.join('\n'))}`;
+        // Call the Vercel serverless function
+        const url = `${apiEndpoint}?permitNumbers=${encodeURIComponent(permits.join('\n'))}`;
         const response = await fetch(url);
 
         if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || 'Server request failed.');
+          const errText = await response.text();
+          throw new Error(errText || 'Workflow request failed.');
         }
 
-        const data = await response.json();
-        statusEl.textContent = `✅ ${data.message}`;
+        // Treat response as a Blob (CSV)
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
+
+        downloadBtn.style.display = 'inline-block';
+        downloadBtn.onclick = () => {
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          a.download = 'permit_report.csv';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(downloadUrl);
+        };
+
+        statusEl.textContent = '✅ Report ready. Click below to download.';
       } catch (err) {
         console.error(err);
-        errorEl.textContent = 'Error: ' + err.message;
         statusEl.textContent = '';
+        errorEl.textContent = 'Error: ' + err.message;
       }
     });
   </script>
