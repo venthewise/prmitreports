@@ -1,8 +1,6 @@
 // api/generate-report.ts
-
 export default async function handler(request: Request) {
   try {
-    // 1. Extract permitNumbers from the query string
     const { searchParams } = new URL(request.url);
     const permitNumbers = searchParams.get('permitNumbers');
 
@@ -10,37 +8,29 @@ export default async function handler(request: Request) {
       return new Response('Missing permitNumbers parameter', { status: 400 });
     }
 
-    // 2. Get the secret webhook URL from environment variables
-    const targetWebhookUrl = process.env.WEBHOOK_URL;
-    if (!targetWebhookUrl) {
-      console.error('WEBHOOK_URL environment variable not set.');
-      return new Response('Server configuration error.', { status: 500 });
+    // Get webhook URL from Vercel environment variable
+    const webhookUrl = process.env.WEBHOOK_URL;
+    if (!webhookUrl) {
+      return new Response('Server misconfigured: WEBHOOK_URL missing.', { status: 500 });
     }
 
-    // 3. Construct the full URL to call the actual webhook
-    const fullUrl = `${targetWebhookUrl}?permitNumbers=${encodeURIComponent(permitNumbers)}`;
+    const fullUrl = `${webhookUrl}?permitNumbers=${encodeURIComponent(permitNumbers)}`;
+    const response = await fetch(fullUrl);
 
-    // 4. Call the n8n webhook
-    const webhookResponse = await fetch(fullUrl);
-
-    if (!webhookResponse.ok) {
-      const errText = await webhookResponse.text();
-      return new Response(`Webhook request failed: ${errText}`, {
-        status: webhookResponse.status,
-      });
+    if (!response.ok) {
+      const text = await response.text();
+      return new Response(`Webhook failed: ${text}`, { status: response.status });
     }
 
-    // 5. Stream the CSV response back to the client
-    return new Response(webhookResponse.body, {
-      status: 200,
+    // Stream CSV back to the client
+    return new Response(response.body, {
       headers: {
-        'Content-Type': webhookResponse.headers.get('Content-Type') || 'text/csv',
-        'Content-Disposition':
-          webhookResponse.headers.get('Content-Disposition') || 'attachment; filename="permit_report.csv"',
+        'Content-Type': response.headers.get('Content-Type') || 'text/csv',
+        'Content-Disposition': response.headers.get('Content-Disposition') || 'attachment; filename="permit_report.csv"',
       },
     });
   } catch (err) {
-    console.error('Error in generate-report API:', err);
-    return new Response('Internal server error.', { status: 500 });
+    console.error(err);
+    return new Response('Internal server error', { status: 500 });
   }
 }
