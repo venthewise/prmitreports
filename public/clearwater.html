@@ -2,49 +2,145 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Clearwater Permit Search - Permit Data Reports</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Clearwater Permit Batch Search</title>
   <style>
-    body { font-family: 'Inter', sans-serif; }
+    body {
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background-color: #f4f4f9;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      text-align: center;
+      max-width: 500px;
+      width: 100%;
+    }
+    textarea {
+      font-size: 14px;
+      padding: 10px;
+      margin-bottom: 20px;
+      width: 95%;
+      min-height: 200px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      resize: vertical;
+    }
+    button {
+      font-size: 16px;
+      padding: 10px 20px;
+      color: white;
+      background-color: #6a4bff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover { background-color: #5237d8; }
+    #downloadBtn {
+      display: none;
+      margin-top: 15px;
+      padding: 10px 20px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #downloadBtn:hover { background-color: #218838; }
+    #status { margin-top: 20px; font-size: 14px; color: #555; min-height: 20px; }
+    #error { color: red; margin-bottom: 10px; font-size: 14px; min-height: 20px; }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 3px solid rgba(0,0,0,0.2);
+      border-top-color: #6a4bff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
-<body class="bg-slate-900 text-white">
-  <main class="p-4 max-w-2xl mx-auto">
-    <h1 class="text-3xl font-bold mb-4">Clearwater Permit Batch Search</h1>
-    <textarea id="permitNumbersInput" class="w-full h-48 p-2 mb-4" placeholder="BCP2025-090286&#10;BCP2025-090510&#10;..."></textarea>
-    <button id="generateBtn" class="bg-cyan-600 py-2 px-4 rounded hover:bg-cyan-500">Generate CSV</button>
-    <div id="status" class="mt-4"></div>
-    <button id="downloadBtn" class="hidden mt-2 bg-green-600 py-2 px-4 rounded hover:bg-green-500">Download CSV</button>
-  </main>
+<body>
+  <div class="container">
+    <h1>Clearwater Permit Batch Search</h1>
+    <p>Paste up to 100 permit numbers below, one per line.</p>
+
+    <div id="error"></div>
+
+    <form id="permitForm">
+      <textarea id="permitNumbersInput" placeholder="BCP2025-090576&#10;BCP2025-090623&#10;..." required></textarea>
+      <br>
+      <button type="submit">Generate CSV Report</button>
+    </form>
+
+    <div id="status"></div>
+    <button id="downloadBtn">Download CSV</button>
+  </div>
 
   <script>
-    const generateBtn = document.getElementById('generateBtn');
+    const form = document.getElementById('permitForm');
     const textarea = document.getElementById('permitNumbersInput');
     const statusEl = document.getElementById('status');
+    const errorEl = document.getElementById('error');
     const downloadBtn = document.getElementById('downloadBtn');
 
-    // Set your internal API endpoint here
-    const webhookURL = '/api/generate-report';
+    // Your n8n webhook URL
+    const webhookURL = 'https://n8n.ai8mations.com/webhook-test/f36170f2-b9f1-44a2-b1e1-b72f56696441';
 
-    generateBtn.addEventListener('click', async () => {
+    const permitPattern = /^BCP\d{4}-\d{6}$/;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorEl.textContent = '';
+      statusEl.textContent = '';
+      downloadBtn.style.display = 'none';
+
       const rawInput = textarea.value.trim();
       if (!rawInput) {
-        statusEl.textContent = 'Please enter at least one permit number.';
+        errorEl.textContent = 'Please enter at least one permit number.';
         return;
       }
 
-      const permits = rawInput.split(/\r?\n/).map(p => p.trim()).filter(Boolean);
-      statusEl.textContent = 'Submitting permits…';
+      const permits = rawInput.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const invalids = permits.filter(p => !permitPattern.test(p));
+
+      if (invalids.length > 0) {
+        errorEl.textContent = `Invalid permit number(s): ${invalids.join(', ')}`;
+        return;
+      }
+
+      statusEl.innerHTML = '<span class="spinner"></span>Submitting permits…';
 
       try {
         const url = `${webhookURL}?permitNumbers=${encodeURIComponent(permits.join('\n'))}`;
         const response = await fetch(url);
-        if (!response.ok) throw new Error(await response.text() || 'Workflow request failed.');
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || 'Workflow request failed.');
+        }
+
+        statusEl.innerHTML = '<span class="spinner"></span>Processing permits… please wait.';
 
         const blob = await response.blob();
-        const downloadUrl = URL.createObjectURL(blob);
 
+        if (blob.size === 0) throw new Error('Received empty CSV file.');
+
+        const downloadUrl = URL.createObjectURL(blob);
         downloadBtn.style.display = 'inline-block';
         downloadBtn.onclick = () => {
           const a = document.createElement('a');
@@ -59,7 +155,8 @@
         statusEl.textContent = '✅ Report ready. Click below to download.';
       } catch (err) {
         console.error(err);
-        statusEl.textContent = 'Error: ' + err.message;
+        statusEl.textContent = '';
+        errorEl.textContent = 'Error: ' + err.message;
       }
     });
   </script>
