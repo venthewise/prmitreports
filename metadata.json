@@ -1,0 +1,5 @@
+{
+  "name": "Permit Data Reports",
+  "description": "A homepage for generating building permit reports from various databases, featuring interactive cards for different data categories.",
+  "requestFramePermissions": []
+}
