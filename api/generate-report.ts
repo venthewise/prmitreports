@@ -2,9 +2,9 @@
 
 // This is a Vercel Serverless Function that runs on the Edge for performance.
 // It will be deployed at the endpoint /api/generate-report
-export const config = {
-  runtime: 'edge',
-};
+//export const config = {
+//  runtime: 'edge',
+//};
 
 export default async function handler(request: Request) {
   // 1. Get the 'permitNumbers' from the incoming request's URL query string.
